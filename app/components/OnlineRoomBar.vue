@@ -39,10 +39,39 @@ const minPlayers = computed(() => info.value?.minPlayers ?? 2)
 const canStart = computed(
   () => isHost.value && phase.value === 'lobby' && seated.value >= minPlayers.value,
 )
+
+// Reconnect countdown: when a seated player drops mid-game the server sets a
+// grace deadline; show a live countdown so everyone knows the game will end if
+// they don't return. A 1s ticker drives the remaining seconds.
+const now = ref(Date.now())
+let ticker: ReturnType<typeof setInterval> | null = null
+onMounted(() => {
+  ticker = setInterval(() => (now.value = Date.now()), 500)
+})
+onBeforeUnmount(() => {
+  if (ticker) clearInterval(ticker)
+})
+const graceSeconds = computed(() => {
+  const until = info.value?.disconnectGraceUntil ?? null
+  if (!until) return null
+  const s = Math.ceil((until - now.value) / 1000)
+  return s > 0 ? s : 0
+})
 </script>
 
 <template>
-  <div class="cg-surface rounded-xl p-2.5 flex flex-wrap items-center gap-2">
+  <div class="space-y-2">
+    <!-- Reconnect countdown (a seated player dropped mid-game) -->
+    <UAlert
+      v-if="graceSeconds !== null"
+      color="warning"
+      variant="subtle"
+      icon="i-lucide-user-x"
+      :title="$t('game.playerLeftTitle')"
+      :description="$t('game.playerLeftCountdown', { count: graceSeconds })"
+    />
+
+    <div class="cg-surface rounded-xl p-2.5 flex flex-wrap items-center gap-2">
     <UBadge color="info" variant="subtle" icon="i-lucide-users">
       {{ $t('game.seated', { count: seated }) }} ·
       {{ $t('game.here', { count: here }) }}
@@ -137,5 +166,6 @@ const canStart = computed(
     <UBadge v-else color="neutral" variant="subtle">
       {{ phase === 'lobby' ? 'Waiting for host…' : phase }}
     </UBadge>
+    </div>
   </div>
 </template>

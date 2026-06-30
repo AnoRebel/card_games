@@ -41,6 +41,7 @@ interface ServerRoomMsg {
     phase?: 'lobby' | 'in-progress' | 'finished'
     minPlayers?: number
     maxPlayers?: number
+    disconnectGraceUntil?: number | null
   }
 }
 
@@ -54,6 +55,8 @@ export interface RoomInfo {
   here: number
   minPlayers: number
   maxPlayers: number
+  /** Epoch ms by which a dropped seated player must reconnect, else auto-end. */
+  disconnectGraceUntil: number | null
   /** Snapshot version, bumped on every room update for reactivity. */
   rev: number
 }
@@ -99,6 +102,7 @@ export class WsTransport<S extends BaseGameState, M extends BaseMove>
     here: 0,
     minPlayers: 2,
     maxPlayers: 6,
+    disconnectGraceUntil: null,
     rev: 0,
   }
 
@@ -195,6 +199,7 @@ export class WsTransport<S extends BaseGameState, M extends BaseMove>
           here: msg.room.members.filter((m) => m.connected).length,
           minPlayers: msg.room.minPlayers ?? 2,
           maxPlayers: msg.room.maxPlayers ?? 6,
+          disconnectGraceUntil: msg.room.disconnectGraceUntil ?? null,
           rev: this.roomInfo.rev + 1,
         }
         // Notify the UI that room membership/host changed (presence, seating)

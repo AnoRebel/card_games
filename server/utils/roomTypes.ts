@@ -84,4 +84,6 @@ export interface RoomSnapshot {
   spectatorVisibility: SpectatorVisibility
   startedAt: string | null
   endedAt: string | null
+  /** Epoch ms by which a dropped seated player must reconnect (else auto-end). */
+  disconnectGraceUntil?: number | null
 }

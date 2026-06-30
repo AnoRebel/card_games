@@ -58,6 +58,8 @@ interface Room {
   chat: ChatMessage[]
   startedAt: string | null
   endedAt: string | null
+  /** Epoch ms by which a dropped seated player must reconnect, else auto-end. */
+  disconnectGraceUntil: number | null
 }
 
 let counter = 0
@@ -70,6 +72,9 @@ const topicFor = (roomId: string) => `room:${roomId}`
 
 /** How long an empty room lingers before it's reaped (ms) — covers reconnects. */
 const EMPTY_ROOM_GRACE_MS = 60_000
+/** How long a disconnected SEATED player has to reconnect before the in-progress
+ *  game is auto-ended (ms). The client shows a countdown of the same length. */
+const PLAYER_GRACE_MS = 30_000
 
 export class RoomHub {
   private rooms = new Map<string, Room>()
@@ -77,9 +82,20 @@ export class RoomHub {
   private peerRoom = new Map<string, string>()
   /** Pending deletion timers for rooms that just went empty. */
   private reapTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  /** Per-disconnected-player grace timers (clientId → timer). */
+  private graceTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
   constructor() {
     ensureGames()
+  }
+
+  /** Cancel a player's reconnect-grace timer (they came back, or were removed). */
+  private cancelGrace(clientId: string) {
+    const t = this.graceTimers.get(clientId)
+    if (t) {
+      clearTimeout(t)
+      this.graceTimers.delete(clientId)
+    }
   }
 
   /** True when no member of the room is still connected. */
@@ -132,6 +148,7 @@ export class RoomHub {
       chat: [],
       startedAt: null,
       endedAt: null,
+      disconnectGraceUntil: null,
     })
     return id
   }
@@ -218,6 +235,30 @@ export class RoomHub {
         room.hostClientId = next?.clientId ?? room.hostClientId
       }
       room.peers.delete(peer.id)
+
+      // A SEATED player dropping out of an IN-PROGRESS game starts a reconnect
+      // countdown. If they don't return in time, the game is auto-ended. The
+      // deadline is broadcast so clients can show a live countdown.
+      if (member.seat !== null && room.phase === 'in-progress') {
+        room.disconnectGraceUntil = Date.now() + PLAYER_GRACE_MS
+        const droppedClientId = peer.id
+        const timer = setTimeout(() => {
+          this.graceTimers.delete(droppedClientId)
+          const r = this.rooms.get(roomId)
+          if (!r) return
+          const m = r.members.get(droppedClientId)
+          // Only end if still gone and the game is still running.
+          if (m && !m.connected && r.phase === 'in-progress') {
+            r.phase = 'finished'
+            r.endedAt = new Date().toISOString()
+            r.disconnectGraceUntil = null
+            this.broadcastRoom(r)
+          }
+        }, PLAYER_GRACE_MS)
+        ;(timer as { unref?: () => void }).unref?.()
+        this.graceTimers.set(peer.id, timer)
+      }
+
       this.broadcastRoom(room)
       this.scheduleReap(roomId)
     }
@@ -232,38 +273,63 @@ export class RoomHub {
     // Someone's joining → cancel any pending empty-room deletion.
     this.cancelReap(msg.roomId)
 
-    const seatedCount = [...room.members.values()].filter(
-      (m) => m.seat !== null,
-    ).length
-    const wantsSeat =
-      !msg.asSpectator &&
-      room.phase === 'lobby' &&
-      seatedCount < room.config.maxPlayers
-
     // Locked rooms require the passcode for ANY entry — players and spectators.
-    // (The host/creator joins with the code it received at creation.)
     const codeOk =
       room.config.spectatorVisibility === 'public' ||
       (!!msg.spectatorPasscode &&
         msg.spectatorPasscode === room.config.spectatorPasscode)
-
     if (room.config.spectatorVisibility === 'locked' && !codeOk) {
       return this.send(peer, {
         t: 'denied',
-        reason: wantsSeat
-          ? 'this room is private — a passcode is required to join'
-          : 'spectating this room requires authorization',
+        reason: 'this room is private — a passcode is required to join',
       })
     }
 
-    const member: RoomMember = {
-      clientId: peer.id,
-      playerId: msg.playerId,
-      name: msg.name,
-      seat: wantsSeat ? seatedCount : null,
-      spectator: !wantsSeat,
-      connected: true,
+    // RECONNECTION: an existing member with the same stable playerId (e.g. the
+    // player refreshed or their tab was closed) reclaims its seat/host status
+    // under the NEW connection. The stale entry is removed so counts stay right.
+    const prior = [...room.members.values()].find(
+      (m) => m.playerId === msg.playerId,
+    )
+    let member: RoomMember
+    if (prior) {
+      const wasHost = room.hostClientId === prior.clientId
+      room.members.delete(prior.clientId)
+      room.peers.delete(prior.clientId)
+      this.cancelGrace(prior.clientId)
+      member = {
+        clientId: peer.id,
+        playerId: prior.playerId,
+        name: msg.name || prior.name,
+        seat: prior.seat, // reclaim the original seat (may be null for spectators)
+        spectator: prior.spectator,
+        connected: true,
+      }
+      if (wasHost) room.hostClientId = peer.id
+      // If every seated player is connected again, clear the auto-end countdown.
+      room.members.set(peer.id, member) // provisional, so the check below sees us
+      const anyoneStillGone = [...room.members.values()].some(
+        (m) => m.seat !== null && !m.connected && m.clientId !== peer.id,
+      )
+      if (!anyoneStillGone) room.disconnectGraceUntil = null
+    } else {
+      const seatedCount = [...room.members.values()].filter(
+        (m) => m.seat !== null,
+      ).length
+      const wantsSeat =
+        !msg.asSpectator &&
+        room.phase === 'lobby' &&
+        seatedCount < room.config.maxPlayers
+      member = {
+        clientId: peer.id,
+        playerId: msg.playerId,
+        name: msg.name,
+        seat: wantsSeat ? seatedCount : null,
+        spectator: !wantsSeat,
+        connected: true,
+      }
     }
+
     room.members.set(peer.id, member)
     room.peers.set(peer.id, peer)
     this.peerRoom.set(peer.id, msg.roomId)
@@ -401,6 +467,7 @@ export class RoomHub {
     if (!roomId) return
     const room = this.rooms.get(roomId)
     if (!room) return
+    this.cancelGrace(peer.id) // explicit leave → no reconnect grace
     room.members.delete(peer.id)
     room.peers.delete(peer.id)
     peer.unsubscribe(topicFor(roomId))
@@ -437,6 +504,7 @@ export class RoomHub {
       spectatorVisibility: room.config.spectatorVisibility,
       startedAt: room.startedAt,
       endedAt: room.endedAt,
+      disconnectGraceUntil: room.disconnectGraceUntil,
     }
   }
 
@@ -487,7 +555,9 @@ export class RoomHub {
 
   dispose() {
     for (const t of this.reapTimers.values()) clearTimeout(t)
+    for (const t of this.graceTimers.values()) clearTimeout(t)
     this.reapTimers.clear()
+    this.graceTimers.clear()
     this.rooms.clear()
     this.peerRoom.clear()
   }

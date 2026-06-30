@@ -35,10 +35,25 @@ const playableIds = computed(() => {
 })
 const opponents = computed(() => players.value.filter((p) => p.seat !== viewerSeat.value))
 const suitSym = (s: string) => ({ c: '♣', s: '♠', h: '♥', d: '♦' })[s] ?? s
+const isRedSuit = (s: string) => s === 'h' || s === 'd'
 const activeName = computed(
   () => players.value.find((p) => p.seat === lc.value.activeSeat)?.name ?? '—',
 )
 const handSize = (seat: number) => lc.value.hands?.[seat]?.length ?? 0
+
+// A Jack (suit-change) was played when the active suit no longer matches the
+// top discard card's suit → highlight the "requested" suit prominently.
+const suitRequested = computed(() => {
+  const top = topDiscard.value
+  return !!top && lc.value.activeSuit !== top.suit
+})
+// It's my turn but I hold no playable card → I can only draw. Make that clear.
+const canOnlyDraw = computed(
+  () =>
+    isMyTurn.value &&
+    playableIds.value.size === 0 &&
+    legalMoves.value.some((m) => m.type === 'draw'),
+)
 
 // --- move log ---------------------------------------------------------------
 const log = useMoveLog<LastCardState>((prev, next) => {
@@ -344,8 +359,19 @@ async function draw() {
       </div>
       <div ref="discardRef" class="flex flex-col items-center gap-2" data-tour="discard">
         <CardPile :top="topDiscard" :count="lc.discardPile?.length ?? 0" :width="96" />
-        <span ref="suitRef" class="text-sm font-semibold text-white/90 flex items-center gap-1.5">
-          {{ $t('game.suit') }}: <span class="text-xl">{{ suitSym(lc.activeSuit) }}</span>
+        <span
+          ref="suitRef"
+          class="text-sm font-semibold flex items-center gap-1.5 rounded-full px-2.5 py-1 transition"
+          :class="suitRequested ? 'cg-suit-requested' : 'text-white/90'"
+          :style="suitRequested
+            ? { background: 'var(--cg-accent)', color: 'var(--cg-accent-contrast)' }
+            : {}"
+        >
+          <UIcon v-if="suitRequested" name="i-lucide-megaphone" class="size-4" />
+          {{ suitRequested ? $t('game.suitRequested') : $t('game.suit') }}:
+          <span class="text-2xl leading-none" :class="isRedSuit(lc.activeSuit) && !suitRequested ? 'text-red-400' : ''">
+            {{ suitSym(lc.activeSuit) }}
+          </span>
           <span v-if="lc.pendingPickup" class="ml-1 rounded-full bg-amber-400/90 text-amber-950 px-2 py-0.5">
             +{{ lc.pendingPickup }}
           </span>
@@ -363,6 +389,19 @@ async function draw() {
       >
         {{ isMyTurn ? $t('game.yourTurn') : $t('game.waitingFor', { name: activeName }) }}
       </span>
+    </div>
+
+    <!-- No playable card → you must draw (input on cards is already blocked). -->
+    <div v-if="canOnlyDraw" class="flex justify-center">
+      <button
+        type="button"
+        class="cg-must-draw inline-flex items-center gap-1.5 text-xs font-semibold rounded-full px-3 py-1.5"
+        :style="{ background: 'color-mix(in oklch, var(--cg-accent) 18%, transparent)', color: 'var(--cg-accent)', border: '1px solid var(--cg-accent)' }"
+        @click="draw"
+      >
+        <UIcon name="i-lucide-download" />
+        {{ suitRequested ? $t('game.mustPlaySuit', { suit: suitSym(lc.activeSuit) }) : $t('game.noPlayDraw') }}
+      </button>
     </div>
 
     <!-- Your hand, with a live card count -->
@@ -460,3 +499,40 @@ async function draw() {
     />
   </div>
 </template>
+
+<style scoped>
+/* A Jack-requested suit pulses to draw attention for every player. */
+.cg-suit-requested {
+  animation: cg-suit-pulse 1.3s ease-in-out infinite;
+}
+@keyframes cg-suit-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--cg-accent) 60%, transparent);
+  }
+  50% {
+    transform: scale(1.06);
+    box-shadow: 0 0 0 6px color-mix(in oklch, var(--cg-accent) 0%, transparent);
+  }
+}
+/* The "must draw" prompt gently breathes. */
+.cg-must-draw {
+  animation: cg-breathe 1.6s ease-in-out infinite;
+}
+@keyframes cg-breathe {
+  0%,
+  100% {
+    opacity: 0.85;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cg-suit-requested,
+  .cg-must-draw {
+    animation: none;
+  }
+}
+</style>

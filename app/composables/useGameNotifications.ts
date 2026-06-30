@@ -11,6 +11,7 @@ import type { GameTransport } from '~/transports/types'
 
 interface LastCardish extends BaseGameState {
   activeSuit?: string
+  activeSeat?: Seat | null
   pendingPickup?: number
   declaredLastCard?: Seat | null
   awaitingCall?: Seat | null
@@ -28,6 +29,7 @@ export function useGameNotifications(
   const { $t } = useI18n()
 
   let prevSuit: string | undefined
+  let prevActiveSeat: Seat | null | undefined
   let prevPickup = 0
   let prevDeclared: Seat | null | undefined
   let prevAwaiting: Seat | null | undefined
@@ -107,12 +109,19 @@ export function useGameNotifications(
     wasMyTurn = view.isMyTurn
 
     if (gid === 'last-card') {
-      // Suit change (wild played).
+      // Suit change (a Jack/wild was played) → attribute to whoever played it
+      // (the seat that was active just before this update) so everyone sees the
+      // request prominently.
       if (prevSuit !== undefined && s.activeSuit && s.activeSuit !== prevSuit) {
         const sym = { c: '♣', s: '♠', h: '♥', d: '♦' }[s.activeSuit] ?? s.activeSuit
-        notify(`${$t('game.suit')}: ${sym}`, 'i-lucide-shuffle', { accent: true })
+        notify(
+          $t('game.requestedSuit', { name: nameOf(prevActiveSeat), suit: sym }),
+          'i-lucide-megaphone',
+          { accent: true, duration: 5000 },
+        )
       }
       prevSuit = s.activeSuit
+      prevActiveSeat = s.activeSeat
 
       // Pickup pending grew.
       if ((s.pendingPickup ?? 0) > prevPickup && (s.pendingPickup ?? 0) > 0) {
@@ -172,6 +181,7 @@ export function useGameNotifications(
       off = null
       offPresence = null
       prevSuit = undefined
+      prevActiveSeat = undefined
       prevPickup = 0
       prevDeclared = undefined
       prevAwaiting = undefined

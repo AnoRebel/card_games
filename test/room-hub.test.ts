@@ -42,6 +42,58 @@ function lastCardConfig(over: Partial<RoomConfig> = {}): RoomConfig {
   }
 }
 
+describe('RoomHub — reconnection', () => {
+  let hub: RoomHub
+  beforeEach(() => {
+    hub = new RoomHub()
+  })
+
+  it('a player who reconnects (new clientId, same playerId) reclaims their seat', () => {
+    const roomId = hub.createRoom(lastCardConfig())
+    const a = new MockPeer('A')
+    const b = new MockPeer('B')
+    hub.onMessage(a, JSON.stringify({ t: 'join', roomId, playerId: 'pa', name: 'A' }))
+    hub.onMessage(b, JSON.stringify({ t: 'join', roomId, playerId: 'pb', name: 'B' }))
+    hub.onMessage(a, JSON.stringify({ t: 'start', roomId }))
+    expect(a.last('joined').youAre.seat).toBe(0)
+
+    // A's tab closes (disconnect, seat kept), then reopens with a NEW clientId.
+    hub.onClose(a)
+    const a2 = new MockPeer('A2') // new connection, same stable playerId 'pa'
+    hub.onMessage(a2, JSON.stringify({ t: 'join', roomId, playerId: 'pa', name: 'A' }))
+
+    // Reclaims seat 0 — NOT a fresh spectator (this was the screenshot bug).
+    expect(a2.last('joined').youAre.seat).toBe(0)
+    expect(a2.last('joined').youAre.spectator).toBe(false)
+    // The room shows exactly 2 seated, both connected (no orphaned ghost member).
+    const room = a2.last('room').room
+    const seated = room.members.filter((m: { seat: number | null }) => m.seat !== null)
+    expect(seated.length).toBe(2)
+    expect(room.members.every((m: { connected: boolean }) => m.connected)).toBe(true)
+    // A2 receives game state with its own hand visible.
+    expect(a2.last('state').state.hands['0'].length).toBeGreaterThan(0)
+  })
+
+  it('sets a reconnect grace deadline when a seated player drops mid-game', () => {
+    const roomId = hub.createRoom(lastCardConfig())
+    const a = new MockPeer('A')
+    const b = new MockPeer('B')
+    hub.onMessage(a, JSON.stringify({ t: 'join', roomId, playerId: 'pa', name: 'A' }))
+    hub.onMessage(b, JSON.stringify({ t: 'join', roomId, playerId: 'pb', name: 'B' }))
+    hub.onMessage(a, JSON.stringify({ t: 'start', roomId }))
+
+    hub.onClose(b)
+    const room = a.last('room').room
+    expect(room.disconnectGraceUntil).toBeTruthy()
+    expect(room.phase).toBe('in-progress') // not ended yet — grace window open
+
+    // Reconnect clears the countdown.
+    const b2 = new MockPeer('B2')
+    hub.onMessage(b2, JSON.stringify({ t: 'join', roomId, playerId: 'pb', name: 'B' }))
+    expect(a.last('room').room.disconnectGraceUntil).toBeNull()
+  })
+})
+
 describe('RoomHub — seating & start', () => {
   let hub: RoomHub
   beforeEach(() => {
