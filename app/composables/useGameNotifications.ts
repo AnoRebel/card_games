@@ -36,7 +36,6 @@ export function useGameNotifications(
   let notifiedTerminal = false
   let off: (() => void) | null = null
   let offPresence: (() => void) | null = null
-  let knownIds = new Set<string>()
 
   // Shared themed toast. Livelier (accent ring + bold title), readable duration.
   const notify = (
@@ -65,26 +64,33 @@ export function useGameNotifications(
     const withPresence = transport as GameTransport<BaseGameState, BaseMove> & {
       onPresence?: (cb: () => void) => () => void
     }
-    knownIds = new Set(transport.getPresence().map((p) => p.playerId))
+    // Track only CONNECTED members: a disconnected player is kept in the roster
+    // (for grace-period reconnect) with connected:false, so we must treat the
+    // connected→disconnected transition as "left", not just roster removal.
+    const connectedNames = () => {
+      const map = new Map<string, string>()
+      for (const p of transport.getPresence()) {
+        if (p.connected) map.set(p.playerId, p.name)
+      }
+      return map
+    }
+    let known = connectedNames()
     offPresence =
       withPresence.onPresence?.(() => {
         if (!notifications.value) return
-        const current = transport.getPresence()
-        const currentIds = new Set(current.map((p) => p.playerId))
-        for (const p of current) {
-          if (!knownIds.has(p.playerId)) {
-            notifyTop(
-              `${p.name} joined${p.spectator ? ' (spectator)' : ''}`,
-              'i-lucide-user-plus',
-            )
+        const current = connectedNames()
+        for (const [id, name] of current) {
+          if (!known.has(id)) {
+            const sp = transport.getPresence().find((p) => p.playerId === id)?.spectator
+            notifyTop(`${name} joined${sp ? ' (spectator)' : ''}`, 'i-lucide-user-plus')
           }
         }
-        for (const id of knownIds) {
-          if (!currentIds.has(id)) {
-            notifyTop('A player left', 'i-lucide-user-minus')
+        for (const [id, name] of known) {
+          if (!current.has(id)) {
+            notifyTop(`${name} left`, 'i-lucide-user-minus')
           }
         }
-        knownIds = currentIds
+        known = current
       }) ?? null
 
   off = transport.onChange((view) => {
@@ -172,7 +178,6 @@ export function useGameNotifications(
       prevOnLast = false
       wasMyTurn = false
       notifiedTerminal = false
-      knownIds = new Set()
       if (t) bind(t)
     },
     { immediate: true },

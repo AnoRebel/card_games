@@ -190,8 +190,9 @@ export class WsTransport<S extends BaseGameState, M extends BaseMove>
           amSpectator: this.amSpectator,
           visibility: msg.room.spectatorVisibility ?? 'public',
           phase: msg.room.phase ?? 'lobby',
-          seated: msg.room.members.filter((m) => m.seat !== null).length,
-          here: msg.room.members.length,
+          seated: msg.room.members.filter((m) => m.seat !== null && m.connected)
+            .length,
+          here: msg.room.members.filter((m) => m.connected).length,
           minPlayers: msg.room.minPlayers ?? 2,
           maxPlayers: msg.room.maxPlayers ?? 6,
           rev: this.roomInfo.rev + 1,

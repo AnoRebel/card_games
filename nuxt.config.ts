@@ -14,7 +14,6 @@ export default defineNuxtConfig({
     '@nuxt/icon',
     '@nuxt/image',
     '@nuxt/fonts',
-    '@nuxt/scripts',
     'nuxt-i18n-micro',
     'nuxt-umami',
   ],
@@ -29,25 +28,25 @@ export default defineNuxtConfig({
     proxy: 'cloak',
   },
 
-  // Rybbit (self-hosted) via @nuxt/scripts registry — the recommended method.
-  // `analyticsHost` MUST end with `/api` for a self-hosted instance (per the
-  // Rybbit docs): the registry derives the script src as `${analyticsHost}/script.js`,
-  // so `.../api` → `.../api/script.js` (the real JS). Omitting `/api` derives
-  // `.../script.js`, which serves the dashboard HTML and crashes the page with
-  // "expected expression, got '<'". Only register when a site id is present.
-  scripts: {
-    registry: {
-      rybbitAnalytics: process.env.NUXT_RYBBIT_SITE_ID
+  // Rybbit (self-hosted) injected DIRECTLY via app.head — the docs' alternative
+  // method. We deliberately avoid @nuxt/scripts here: its registry proxies the
+  // script through /_scripts/p/... and rewrites the SDK's API host to the SaaS
+  // default app.rybbit.io, so tracking POSTed to
+  // /_scripts/p/app.rybbit.io/api/track → 404 "Site not found". Loading the
+  // script straight from the instance makes the SDK derive its API host from its
+  // own origin (rybbit.anorebel.net) and POST there. Only inject when a site id
+  // is present; the script handles SPA route tracking itself.
+  app: {
+    head: {
+      script: process.env.NUXT_RYBBIT_SITE_ID
         ? [
             {
-              siteId: process.env.NUXT_RYBBIT_SITE_ID,
-              analyticsHost: 'https://rybbit.anorebel.net/api',
-              autoTrackPageview: true,
-              trackSpa: true,
+              src: 'https://rybbit.anorebel.net/api/script.js',
+              defer: true,
+              'data-site-id': process.env.NUXT_RYBBIT_SITE_ID,
             },
-            { trigger: 'onNuxtReady' },
           ]
-        : undefined,
+        : [],
     },
   },
 

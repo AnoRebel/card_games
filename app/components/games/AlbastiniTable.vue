@@ -29,7 +29,7 @@ const ab = computed(
 )
 const hasState = computed(() => ready.value && !!ab.value.hands)
 const myHand = computed(() =>
-  viewerSeat !== null ? (ab.value.hands?.[viewerSeat] ?? []) : [],
+  viewerSeat.value !== null ? (ab.value.hands?.[viewerSeat.value] ?? []) : [],
 )
 const trumpSym = computed(() =>
   ab.value.trump ? ({ c: '♣', s: '♠', h: '♥', d: '♦' })[ab.value.trump] : '—',
@@ -41,9 +41,9 @@ const playableIds = computed(() => {
   return ids
 })
 const activeName = computed(
-  () => players.find((p) => p.seat === ab.value.activeSeat)?.name ?? '—',
+  () => players.value.find((p) => p.seat === ab.value.activeSeat)?.name ?? '—',
 )
-const opponents = computed(() => players.filter((p) => p.seat !== viewerSeat))
+const opponents = computed(() => players.value.filter((p) => p.seat !== viewerSeat.value))
 const handSize = (seat: number) => ab.value.hands?.[seat]?.length ?? 0
 const eaten = (seat: number) => ab.value.taken?.[seat] ?? []
 const stockCount = computed(() => ab.value.stock?.length ?? 0)
@@ -52,18 +52,18 @@ const log = useMoveLog<AlbastiniState>((prev, next) => {
   if (!prev || !next.currentTrick) return null
   if (next.currentTrick.length > prev.currentTrick.length) {
     const tp = next.currentTrick[next.currentTrick.length - 1]!
-    const who = players.find((p) => p.seat === tp.seat)?.name ?? '?'
+    const who = players.value.find((p) => p.seat === tp.seat)?.name ?? '?'
     return { who, action: 'played', card: cardShort(tp.card), icon: 'i-lucide-play' }
   }
   if (prev.currentTrick.length && !next.currentTrick.length) {
-    for (const p of players) {
+    for (const p of players.value) {
       if ((next.taken?.[p.seat]?.length ?? 0) > (prev.taken?.[p.seat]?.length ?? 0))
         return { who: p.name, action: 'ate the trick (Kula)', icon: 'i-lucide-utensils' }
     }
   }
   if (next.bids.length > prev.bids.length) {
     const b = next.bids[next.bids.length - 1]!
-    const who = players.find((p) => p.seat === b.seat)?.name ?? '?'
+    const who = players.value.find((p) => p.seat === b.seat)?.name ?? '?'
     return { who, action: 'bid (otea)', card: cardShort(b.card), icon: 'i-lucide-gavel' }
   }
   return null
@@ -97,7 +97,7 @@ let primedHands = false
 props.transport.onChange((v) => {
   const next = v.state as AlbastiniState | null
   if (next?.taken) {
-    for (const p of players) {
+    for (const p of players.value) {
       const before = prevTaken[p.seat] ?? 0
       const after = next.taken?.[p.seat]?.length ?? 0
       if (after > before) lastEater.value = p.seat
@@ -105,12 +105,12 @@ props.transport.onChange((v) => {
     }
   }
   if (next?.hands) {
-    for (const p of players) {
+    for (const p of players.value) {
       const after = next.hands?.[p.seat]?.length ?? 0
       const before = prevHand[p.seat] ?? after
       // Skip the very first state (initial deal) — only animate refills mid-game.
       if (primedHands && after > before && stockRef.value) {
-        const toViewer = p.seat === viewerSeat
+        const toViewer = p.seat === viewerSeat.value
         const to = toViewer ? (handRef.value?.rootEl() ?? null) : oppEls.get(p.seat) ?? null
         if (to) {
           const reps = after - before
@@ -191,7 +191,7 @@ const showGameOver = ref(false)
 watch(scores, (s) => {
   if (!s) { showGameOver.value = false; return } // rematch/new round → close it
   nextTick(() => {
-    const won = s.winners.includes(viewerSeat ?? -1)
+    const won = s.winners.includes(viewerSeat.value ?? -1)
     if (won) {
       confetti()
       if (tableRef.value) burst(tableRef.value)

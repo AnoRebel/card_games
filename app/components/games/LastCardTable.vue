@@ -25,7 +25,7 @@ const topDiscard = computed(
   () => lc.value.discardPile?.[lc.value.discardPile.length - 1] ?? null,
 )
 const myHand = computed(() =>
-  viewerSeat !== null ? (lc.value.hands?.[viewerSeat] ?? []) : [],
+  viewerSeat.value !== null ? (lc.value.hands?.[viewerSeat.value] ?? []) : [],
 )
 const modalUi = useThemedModalUi()
 const playableIds = computed(() => {
@@ -33,10 +33,10 @@ const playableIds = computed(() => {
   for (const m of legalMoves.value) if (m.type === 'play') ids.add(cardId(m.card))
   return ids
 })
-const opponents = computed(() => players.filter((p) => p.seat !== viewerSeat))
+const opponents = computed(() => players.value.filter((p) => p.seat !== viewerSeat.value))
 const suitSym = (s: string) => ({ c: '♣', s: '♠', h: '♥', d: '♦' })[s] ?? s
 const activeName = computed(
-  () => players.find((p) => p.seat === lc.value.activeSeat)?.name ?? '—',
+  () => players.value.find((p) => p.seat === lc.value.activeSeat)?.name ?? '—',
 )
 const handSize = (seat: number) => lc.value.hands?.[seat]?.length ?? 0
 
@@ -45,16 +45,16 @@ const log = useMoveLog<LastCardState>((prev, next) => {
   if (!prev || !next.discardPile) return null
   if (next.discardPile.length > prev.discardPile.length) {
     const card = next.discardPile[next.discardPile.length - 1]!
-    const who = players.find((p) => prev.activeSeat === p.seat)?.name ?? '?'
+    const who = players.value.find((p) => prev.activeSeat === p.seat)?.name ?? '?'
     return { who, action: 'played', card: cardShort(card), icon: 'i-lucide-play' }
   }
-  for (const p of players) {
+  for (const p of players.value) {
     const a = prev.hands?.[p.seat]?.length ?? 0
     const b = next.hands?.[p.seat]?.length ?? 0
     if (b > a) return { who: p.name, action: `drew ${b - a}`, icon: 'i-lucide-download' }
   }
   if (next.roundWinner != null && next.roundWinner !== prev.roundWinner) {
-    const w = players.find((p) => p.seat === next.roundWinner)?.name ?? '?'
+    const w = players.value.find((p) => p.seat === next.roundWinner)?.name ?? '?'
     return { who: w, action: 'went out!', icon: 'i-lucide-flag' }
   }
   return null
@@ -81,7 +81,7 @@ function setOppEl(seat: number, node: Element | null) {
 /** Anchor for a seat: opponents use their pill; the viewer uses their hand's
  *  root DOM element (NOT the exposed component object — that has no rect). */
 function seatAnchor(seat: number): HTMLElement | null {
-  if (seat === viewerSeat) return handRef.value?.rootEl() ?? null
+  if (seat === viewerSeat.value) return handRef.value?.rootEl() ?? null
   return oppEls.get(seat) ?? null
 }
 
@@ -130,7 +130,7 @@ const showGameOver = ref(false)
 watch(scores, (s) => {
   if (!s) { showGameOver.value = false; return } // rematch/new round → close it
   nextTick(() => {
-    const won = s.winners.includes(viewerSeat ?? -1)
+    const won = s.winners.includes(viewerSeat.value ?? -1)
     if (won) {
       confetti()
       if (tableRef.value) burst(tableRef.value)
@@ -149,7 +149,7 @@ props.transport.onChange((v) => {
   if (next) {
     lastPlayerSeat.value = prevActive
     // Draw detection: any seat whose hand grew → fly card(s) from the draw pile.
-    for (const p of players) {
+    for (const p of players.value) {
       const before = prevHands[p.seat] ?? 0
       const after = next.hands?.[p.seat]?.length ?? 0
       if (primedHands && after > before) animateDraw(p.seat, after - before)
