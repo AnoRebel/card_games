@@ -113,6 +113,22 @@ export function press(target: string | Element) {
   })
 }
 
+/**
+ * Gentle continuous bob/float for a set of elements (e.g. footer suit pips).
+ * Staggered so they ripple rather than move in lockstep. No-op when reduced.
+ */
+export function floatLoop(targets: string | Element | Element[]) {
+  if (reduced()) return
+  animate(targets, {
+    translateY: [0, -5, 0],
+    rotate: [0, 6, 0],
+    duration: 2200,
+    delay: stagger(160),
+    loop: true,
+    ease: 'inOut(2)',
+  })
+}
+
 /** Subtle hover tilt for a card (rich only). */
 export function tilt(target: Element, on: boolean) {
   if (reduced() || !rich()) return

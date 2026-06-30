@@ -77,6 +77,8 @@ const locales = computed(() => $getLocales())
       <slot />
     </main>
 
+    <AppFooter />
+
     <GlobalSettings />
   </div>
 </template>
