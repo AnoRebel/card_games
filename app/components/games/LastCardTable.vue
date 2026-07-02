@@ -264,10 +264,38 @@ const multiCount = computed(() => {
 })
 const suitSymOf = (s: string) => ({ c: '♣', s: '♠', h: '♥', d: '♦' })[s] ?? s
 
-async function commitPlay(move: LastCardMove) {
+// "Call Last Card?" prompt. When a chosen play would leave the viewer on their
+// last card(s), we ask — ON THEIR TURN, untimed — whether to call it. The engine
+// offers both a plain and a `declareLastCard:true` variant of the same play; the
+// player's answer picks which one we submit. This replaces the old race against
+// the next player's action.
+const pendingCall = ref<{ plain: LastCardMove; declare: LastCardMove } | null>(null)
+const callModalOpen = computed({
+  get: () => pendingCall.value !== null,
+  set: (v: boolean) => { if (!v) pendingCall.value = null },
+})
+
+/**
+ * Submit `move`, but if a `declareLastCard` sibling exists (this play reaches
+ * the last card[s]), prompt first. Returns true if it deferred to the prompt.
+ */
+function maybePromptCall(move: LastCardMove): boolean {
+  if (move.type !== 'play' || move.declareLastCard) return false
+  const declare = legalMoves.value.find(
+    (m) =>
+      m.type === 'play' &&
+      m.declareLastCard === true &&
+      cardId(m.card) === cardId(move.card) &&
+      (m.chosenSuit ?? null) === (move.chosenSuit ?? null) &&
+      (m.extraCards?.length ?? 0) === (move.extraCards?.length ?? 0),
+  )
+  if (!declare) return false
+  pendingCall.value = { plain: move, declare }
+  return true
+}
+
+async function submitPlay(move: LastCardMove) {
   if (move.type !== 'play') return
-  pendingMulti.value = null
-  choosingTop.value = false
   const cards = playedCards(move)
   await flyToDiscard(...cards)
   // Mark as locally-flown BEFORE submitting so the state-diff watcher (which may
@@ -278,6 +306,23 @@ async function commitPlay(move: LastCardMove) {
   if (!res.ok && flownByLocal === cardId(cards[cards.length - 1]!)) {
     flownByLocal = null
   }
+}
+
+async function commitPlay(move: LastCardMove) {
+  if (move.type !== 'play') return
+  pendingMulti.value = null
+  choosingTop.value = false
+  // Reaching the last card(s)? Ask to call it first (untimed, on your turn).
+  if (maybePromptCall(move)) return
+  await submitPlay(move)
+}
+
+/** Answer the "Call Last Card?" prompt. */
+async function answerCall(call: boolean) {
+  const p = pendingCall.value
+  pendingCall.value = null
+  if (!p) return
+  await submitPlay(call ? p.declare : p.plain)
 }
 
 async function playCardMove(card: Card) {
@@ -528,6 +573,27 @@ async function draw() {
             >
               <PlayingCard v-if="topOf(b)" :card="topOf(b)!" :width="64" />
             </button>
+          </div>
+        </div>
+      </template>
+    </UModal>
+
+    <!-- "Call Last Card?" — shown on your turn when a play leaves you on your
+         last card(s). Untimed: the game waits for your choice. -->
+    <UModal v-model:open="callModalOpen" :title="$t('game.callLastCardTitle')" :ui="modalUi">
+      <template #body>
+        <div class="space-y-3 text-center">
+          <p class="text-3xl">🔔</p>
+          <p class="text-sm" :style="{ color: 'var(--cg-text-muted)' }">
+            {{ $t('game.callLastCardBody') }}
+          </p>
+          <div class="grid grid-cols-2 gap-3">
+            <UButton size="lg" color="primary" icon="i-lucide-megaphone" class="justify-center" @click="answerCall(true)">
+              {{ $t('game.callLastCard') }}
+            </UButton>
+            <UButton size="lg" variant="outline" color="neutral" class="justify-center" @click="answerCall(false)">
+              {{ $t('game.stayQuiet') }}
+            </UButton>
           </div>
         </div>
       </template>
