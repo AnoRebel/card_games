@@ -374,7 +374,11 @@ export class RoomHub {
 
   private onStart(peer: WsPeer, msg: Extract<ClientMessage, { t: 'start' }>) {
     const room = this.rooms.get(msg.roomId)
-    if (!room || room.hostClientId !== peer.id || room.phase !== 'lobby') return
+    // Host may start from the lobby OR restart a finished game (rematch); an
+    // in-progress game can't be restarted out from under the players.
+    if (!room || room.hostClientId !== peer.id || room.phase === 'in-progress') {
+      return
+    }
     const seated = [...room.members.values()]
       .filter((m) => m.seat !== null)
       .sort((a, b) => a.seat! - b.seat!)
@@ -397,6 +401,10 @@ export class RoomHub {
     )
     room.phase = 'in-progress'
     room.startedAt = new Date().toISOString()
+    // Fresh game → clear any prior end/grace markers.
+    room.endedAt = null
+    room.endedBy = null
+    room.disconnectGraceUntil = null
     this.broadcastRoom(room)
     this.broadcastState(room)
   }

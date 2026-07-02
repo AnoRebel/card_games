@@ -93,6 +93,8 @@
     "noPlayDraw": "No playable card — draw",
     "callLastCard": "Call Last Card!",
     "endedByHost": "{name} ended the game",
+    "endedByHostBody": "The host ended the game. What next?",
+    "theHost": "The host",
     "gameOver": "Game over",
     "youWin": "You win!",
     "you": "you",

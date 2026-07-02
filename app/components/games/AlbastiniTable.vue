@@ -208,6 +208,16 @@ watch(scores, (s) => {
   })
 })
 
+// Host manually ended the game (no natural scores) → open the same dialog so
+// remaining players get next-step options.
+const endedBy = computed(
+  () => (session.roomInfo.value as { endedBy?: string | null } | null)?.endedBy ?? null,
+)
+watch(endedBy, (name) => {
+  if (name && !scores.value) showGameOver.value = true
+  else if (!name && !scores.value) showGameOver.value = false // rematch cleared it
+})
+
 async function onPlay(card: Card) {
   const move = legalMoves.value.find(
     (m) => (m.type === 'play' || m.type === 'bid') && cardId(m.card) === cardId(card),
@@ -373,11 +383,12 @@ async function passBid() {
       </template>
     </UModal>
 
-    <!-- End-of-game scoreboard -->
+    <!-- End-of-game dialog: natural result (scoreboard) OR host-ended notice. -->
     <GameOverDialog
-      v-if="scores"
+      v-if="scores || endedBy"
       v-model:open="showGameOver"
       :scores="scores"
+      :ended-by="endedBy"
       :players="players"
       :viewer-seat="viewerSeat"
       game-id="albastini"

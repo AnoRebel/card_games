@@ -177,6 +177,16 @@ watch(scores, (s) => {
   })
 })
 
+// Host manually ended the game (no natural scores) → open the same end dialog
+// so the remaining players get next-step options (rematch / new game / exit).
+const endedBy = computed(
+  () => (session.roomInfo.value as { endedBy?: string | null } | null)?.endedBy ?? null,
+)
+watch(endedBy, (name) => {
+  if (name && !scores.value) showGameOver.value = true
+  else if (!name && !scores.value) showGameOver.value = false // rematch cleared it
+})
+
 // Diff-driven effects on every state update: remember who was active (the
 // player), and fly drawn cards from the draw pile to the drawing seat.
 props.transport.onChange((v) => {
@@ -526,11 +536,13 @@ async function draw() {
     <!-- Move log (floating side panel) -->
     <MoveLogSlideover :entries="log.entries.value" />
 
-    <!-- End-of-game scoreboard -->
+    <!-- End-of-game dialog: natural result (scoreboard) OR a host-ended notice,
+         both offering rematch / new game / exit. -->
     <GameOverDialog
-      v-if="scores"
+      v-if="scores || endedBy"
       v-model:open="showGameOver"
       :scores="scores"
+      :ended-by="endedBy"
       :players="players"
       :viewer-seat="viewerSeat"
       game-id="last-card"

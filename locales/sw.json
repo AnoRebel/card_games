@@ -93,6 +93,8 @@
     "noPlayDraw": "Hakuna kadi ya kucheza — lamba",
     "callLastCard": "Lia Kadi (Last Cards)",
     "endedByHost": "{name} ameacha mchezo",
+    "endedByHostBody": "Muanzishi kakimbia mchezo. Sasa nini?",
+    "theHost": "Muanzishi",
     "gameOver": "Mchezo umeisha",
     "youWin": "Umeshinda!",
     "you": "wewe",

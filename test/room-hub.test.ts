@@ -261,6 +261,21 @@ describe('RoomHub — manual end', () => {
     expect(a.last('room').room.phase).toBe('in-progress')
     expect(a.last('room').room.endedBy).toBeNull()
   })
+
+  it('a rematch (start) after a manual end clears endedBy', () => {
+    const roomId = hub.createRoom(lastCardConfig())
+    const a = new MockPeer('A')
+    const b = new MockPeer('B')
+    hub.onMessage(a, JSON.stringify({ t: 'join', roomId, playerId: 'pa', name: 'Alice' }))
+    hub.onMessage(b, JSON.stringify({ t: 'join', roomId, playerId: 'pb', name: 'Bob' }))
+    hub.onMessage(a, JSON.stringify({ t: 'start', roomId }))
+    hub.onMessage(a, JSON.stringify({ t: 'end', roomId }))
+    expect(a.last('room').room.endedBy).toBe('Alice')
+    // Host restarts → fresh game, endedBy cleared, phase back to in-progress.
+    hub.onMessage(a, JSON.stringify({ t: 'start', roomId }))
+    expect(a.last('room').room.phase).toBe('in-progress')
+    expect(a.last('room').room.endedBy).toBeNull()
+  })
 })
 
 describe('RoomHub — custom ids & public listing', () => {

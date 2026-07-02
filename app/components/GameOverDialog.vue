@@ -1,14 +1,17 @@
 <script setup lang="ts">
 /**
- * End-of-game scoreboard modal. Shows a ranked scoreboard (winner highlighted)
- * with confetti already fired by the table, and offers rematch / new game /
- * exit. Rematch keeps the same room/setup; new game returns to setup; exit
- * leaves to the lobby.
+ * End-of-game modal. Two modes:
+ *  - natural end (`scores` present): ranked scoreboard, winner highlighted.
+ *  - host-ended (`endedBy` set, no scores): a short "ended the game" notice.
+ * Both offer rematch / new game / exit. Rematch keeps the same room/setup; new
+ * game returns to setup; exit leaves to the lobby.
  */
 import type { Player, ScoreResult, Seat } from '@card-games/engine-core'
 
 const props = defineProps<{
-  scores: ScoreResult
+  scores: ScoreResult | null
+  /** Host who manually ended the game (no natural result). */
+  endedBy?: string | null
   players: Player[]
   viewerSeat: Seat | null
   gameId: string
@@ -22,9 +25,10 @@ const modalUi = useThemedModalUi()
 
 // Albastini ranks by victory points (higher better); Last Card by penalty
 // (lower better). Use victoryBySeat when present, else raw score.
-const useVp = computed(() => !!props.scores.victoryBySeat)
+const useVp = computed(() => !!props.scores?.victoryBySeat)
 const rows = computed(() => {
   const s = props.scores
+  if (!s) return []
   return props.players
     .map((p) => ({
       seat: p.seat,
@@ -36,10 +40,12 @@ const rows = computed(() => {
     .sort((a, b) => (useVp.value ? b.score - a.score : a.score - b.score))
 })
 const medal = (i: number) => ['🥇', '🥈', '🥉'][i] ?? `${i + 1}`
-const youWon = computed(() => props.viewerSeat != null && props.scores.winners.includes(props.viewerSeat))
+const youWon = computed(
+  () => !!props.scores && props.viewerSeat != null && props.scores.winners.includes(props.viewerSeat),
+)
 const winnerNames = computed(() =>
   props.players
-    .filter((p) => props.scores.winners.includes(p.seat))
+    .filter((p) => props.scores?.winners.includes(p.seat))
     .map((p) => p.name)
     .join(', '),
 )
@@ -48,7 +54,19 @@ const winnerNames = computed(() =>
 <template>
   <UModal v-model:open="open" :title="$t('game.gameOver')" :ui="modalUi">
     <template #body>
-      <div class="space-y-4">
+      <!-- Host-ended (no natural result) -->
+      <div v-if="!scores" class="text-center space-y-2 py-2">
+        <p class="text-4xl">🛑</p>
+        <p class="font-display text-lg font-bold">
+          {{ $t('game.endedByHost', { name: endedBy || $t('game.theHost') }) }}
+        </p>
+        <p class="text-sm" :style="{ color: 'var(--cg-text-muted)' }">
+          {{ $t('game.endedByHostBody') }}
+        </p>
+      </div>
+
+      <!-- Natural end: scoreboard -->
+      <div v-else class="space-y-4">
         <!-- Headline -->
         <div class="text-center space-y-1">
           <p class="text-4xl">{{ youWon ? '🏆' : '🎴' }}</p>
