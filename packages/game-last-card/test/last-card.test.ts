@@ -385,8 +385,11 @@ describe('Last Card — multi same-rank plays', () => {
     const bundles = lastCardGame
       .getLegalMoves(s, 0)
       .filter((m) => m.type === 'play' && (m.extraCards?.length ?? 0) === 2)
-    // Each option ends on the chosen top/suit-setting card → three distinct
-    // top suits (the declare-last-card variants share the same top suits).
+    // The three 9s are h/c/s but only 9♥ is a LEGAL lead (active suit h). You
+    // can leave ♣ or ♠ on top (9♥ leads), but NOT ♥ — the only legal lead can't
+    // also be the last card. So exactly two choosable top suits (c, s). Every
+    // offered bundle must apply cleanly.
+    for (const m of bundles) expect(applyMove(lastCardGame, s, m).ok).toBe(true)
     const topSuits = new Set(
       bundles.map((m) => {
         if (m.type !== 'play') return ''
@@ -394,7 +397,8 @@ describe('Last Card — multi same-rank plays', () => {
         return cards[cards.length - 1]!.suit
       }),
     )
-    expect(topSuits.size).toBe(3)
+    expect(topSuits.size).toBe(2)
+    expect(topSuits.has('h')).toBe(false) // ♥ can't be left on top (only legal lead)
   })
 
   it('a triplet that empties the hand wins the round', () => {
@@ -419,6 +423,35 @@ describe('Last Card — multi same-rank plays', () => {
     expect(r.ok).toBe(true)
     const after = (r as { state: LastCardState }).state
     expect(after.roundWinner).toBe(0)
+  })
+
+  it('never offers a multi-play whose LEAD is illegal (every legal move applies)', () => {
+    // Pair of Kings where only the ♦ King can legally lead onto a ♦ demand.
+    // The old top-suit generation offered {lead: 13♣, top: 13♦} — an illegal
+    // lead — which the reducer rejected, stalling bot games.
+    const base = init()
+    const s: LastCardState = {
+      ...base,
+      activeSeat: 0,
+      activeSuit: 'd',
+      discardPile: [{ rank: 12, suit: 'd' }],
+      hands: {
+        0: [{ rank: 13, suit: 'c' }, { rank: 13, suit: 'd' }, { rank: 2, suit: 's' }],
+        1: [{ rank: 8, suit: 'c' }],
+        2: [{ rank: 8, suit: 'h' }],
+      },
+    }
+    const moves = lastCardGame.getLegalMoves(s, 0)
+    // EVERY legal move must actually apply (no illegal lead slips through).
+    for (const m of moves) {
+      const r = applyMove(lastCardGame, s, m)
+      expect(r.ok, `move ${JSON.stringify(m)} should be applicable`).toBe(true)
+    }
+    // And the King-pair IS offered (via the legal ♦ lead), both top orderings.
+    const pairMoves = moves.filter(
+      (m) => m.type === 'play' && m.card.rank === 13 && (m.extraCards?.length ?? 0) === 1,
+    )
+    expect(pairMoves.length).toBeGreaterThan(0)
   })
 })
 

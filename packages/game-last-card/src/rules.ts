@@ -247,15 +247,22 @@ export function getLegalMoves(state: LastCardState, seat: Seat): LastCardMove[] 
           pushPlay(card, extras)
         } else {
           const group = [card, ...extras]
-          // The TOP (last-played) card sets the suit. Because every card in the
-          // group shares the lead's rank, ALL of them are legal leads — so we
-          // can place any chosen card last and use another as the (legal) lead.
-          // Emit one option per distinct top suit.
-          const seenSuit = new Set<string>()
+          // Play the whole same-rank group. The TOP (last-played) card sets the
+          // active suit, so we offer one bundle per distinct top-suit. Two hard
+          // constraints: (1) the LEAD (first card) must be a legal play — same
+          // rank does NOT make every card a legal lead (a 9♣ can't lead onto a
+          // ♦ demand); (2) to leave suit `s` on top there must be a suit-`s`
+          // card to place LAST. If the only legal lead is also the only suit-`s`
+          // card, that top-suit is infeasible (can't be both first and last).
+          const legalLeads = group.filter((c) => canPlay(state, c))
+          const seenTopSuit = new Set<string>()
           for (const top of group) {
-            if (seenSuit.has(top.suit)) continue
-            seenSuit.add(top.suit)
-            const lead = group.find((c) => cardId(c) !== cardId(top)) ?? card
+            if (seenTopSuit.has(top.suit)) continue
+            // Need a legal lead distinct from the card we want on top (so `top`
+            // can be played LAST). If none, this top-suit is infeasible.
+            const lead = legalLeads.find((c) => cardId(c) !== cardId(top))
+            if (!lead) continue
+            seenTopSuit.add(top.suit)
             const middle = group.filter(
               (c) => cardId(c) !== cardId(top) && cardId(c) !== cardId(lead),
             )
